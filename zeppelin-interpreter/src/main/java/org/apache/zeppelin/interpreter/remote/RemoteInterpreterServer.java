@@ -39,6 +39,7 @@ import org.apache.zeppelin.display.*;
 import org.apache.zeppelin.helium.*;
 import org.apache.zeppelin.interpreter.*;
 import org.apache.zeppelin.interpreter.InterpreterResult.Code;
+import org.apache.zeppelin.interpreter.dev.ZeppelinDevServer;
 import org.apache.zeppelin.interpreter.thrift.*;
 import org.apache.zeppelin.resource.*;
 import org.apache.zeppelin.scheduler.Job;
@@ -171,8 +172,12 @@ public class RemoteInterpreterServer
 
   public static void main(String[] args)
       throws TTransportException, InterruptedException {
-    String host = args[0];
-    int port = Integer.parseInt(args[1]);
+    String host = "localhost";
+    int port = ZeppelinDevServer.DEFAULT_TEST_INTERPRETER_PORT;
+    if (args.length > 0) {
+      host = args[0];
+      port = Integer.parseInt(args[1]);
+    }
     RemoteInterpreterServer remoteInterpreterServer = new RemoteInterpreterServer(host, port);
     remoteInterpreterServer.start();
     remoteInterpreterServer.join();
@@ -319,7 +324,9 @@ public class RemoteInterpreterServer
   @Override
   public RemoteInterpreterResult interpret(String noteId, String className, String st,
       RemoteInterpreterContext interpreterContext) throws TException {
-    logger.debug("st: {}", st);
+    if (logger.isDebugEnabled()) {
+      logger.debug("st:\n{}", st);
+    }
     Interpreter intp = getInterpreter(noteId, className);
     InterpreterContext context = convert(interpreterContext);
 
