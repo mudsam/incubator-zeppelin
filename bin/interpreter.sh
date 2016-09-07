@@ -20,17 +20,19 @@ bin=$(dirname "${BASH_SOURCE-$0}")
 bin=$(cd "${bin}">/dev/null; pwd)
 
 function usage() {
-    echo "usage) $0 -p <port> -d <interpreter dir to load> -l <local interpreter repo dir to load>"
+    echo "usage) $0 -h <host> -p <port> -d <interpreter dir to load> -l <local interpreter repo dir to load>"
 }
 
-while getopts "hp:d:l:v" o; do
+while getopts "h:m:p:d:l:v" o; do
     case ${o} in
-        h)
-            usage
-            exit 0
+        m)
+            MASTER=${OPTARG}
             ;;
         d)
             INTERPRETER_DIR=${OPTARG}
+            ;;
+        h)
+            HOST=${OPTARG}
             ;;
         p)
             PORT=${OPTARG}
@@ -46,7 +48,7 @@ while getopts "hp:d:l:v" o; do
 done
 
 
-if [ -z "${PORT}" ] || [ -z "${INTERPRETER_DIR}" ]; then
+if [ -z "${HOST}" ] || [ -z "${PORT}" ] || [ -z "${INTERPRETER_DIR}" ]; then
     usage
     exit 1
 fi
@@ -156,9 +158,16 @@ addJarInDirForIntp "${LOCAL_INTERPRETER_REPO}"
 CLASSPATH+=":${ZEPPELIN_INTP_CLASSPATH}"
 
 if [[ -n "${SPARK_SUBMIT}" ]]; then
-    ${SPARK_SUBMIT} --class ${ZEPPELIN_SERVER} --driver-class-path "${ZEPPELIN_INTP_CLASSPATH_OVERRIDES}:${CLASSPATH}" --driver-java-options "${JAVA_INTP_OPTS}" ${SPARK_SUBMIT_OPTIONS} ${SPARK_APP_JAR} ${PORT} &
+    if [[ "${MASTER}" == "yarn-cluster" ]] || [[ "${MASTER}" == "cluster" ]]; then
+        # TODO(JohanMuedsam) - How to generalize handling of environment variables
+        SPARK_SUBMIT_OPTIONS+=" --conf spark.yarn.appMasterEnv.http_proxy=${HTTP_PROXY} --conf spark.yarn.appMasterEnv.https_proxy=${HTTPS_PROXY} --conf spark.yarn.appMasterEnv.HTTPS_PROXY=${HTTPS_PROXY} --conf spark.yarn.appMasterEnv.HTTPS_PROXY=${HTTPS_PROXY} --conf spark.yarn.executorEnv.PYTHONPATH=${PYTHONPATH} --conf spark.yarn.appMasterEnv.PYTHONPATH=${PYTHONPATH} --conf spark.yarn.executorEnv.PYSPARK_PYTHON=${PYSPARK_PYTHON} --conf spark.yarn.appMasterEnv.PYSPARK_PYTHON=${PYSPARK_PYTHON} --conf spark.executorEnv.SPARK_HOME=${SPARK_HOME} --conf spark.yarn.appMasterEnv.SPARK_HOME=${SPARK_HOME} --conf spark.executorEnv.ZEPPELIN_HOME=${ZEPPELIN_HOME} --conf spark.yarn.appMasterEnv.ZEPPELIN_HOME=${ZEPPELIN_HOME} --files ${SPARK_HOME}/conf/hive-site.xml"
+        ${SPARK_SUBMIT} --master yarn-cluster --class ${ZEPPELIN_SERVER} --conf spark.driver.extraClassPath="${ZEPPELIN_INTP_CLASSPATH_OVERRIDES}:${CLASSPATH}" --conf spark.driver.extraJavaOptions="${JAVA_INTP_OPTS}" ${SPARK_SUBMIT_OPTIONS} ${SPARK_APP_JAR} ${HOST} ${PORT} &
+    else
+     
+        ${SPARK_SUBMIT} --class ${ZEPPELIN_SERVER} --driver-class-path "${ZEPPELIN_INTP_CLASSPATH_OVERRIDES}:${CLASSPATH}" --driver-java-options "${JAVA_INTP_OPTS}" ${SPARK_SUBMIT_OPTIONS} ${SPARK_APP_JAR} ${HOST} ${PORT} &
+    fi
 else
-    ${ZEPPELIN_RUNNER} ${JAVA_INTP_OPTS} ${ZEPPELIN_INTP_MEM} -cp ${ZEPPELIN_INTP_CLASSPATH_OVERRIDES}:${CLASSPATH} ${ZEPPELIN_SERVER} ${PORT} &
+    ${ZEPPELIN_RUNNER} ${JAVA_INTP_OPTS} ${ZEPPELIN_INTP_MEM} -cp ${ZEPPELIN_INTP_CLASSPATH_OVERRIDES}:${CLASSPATH} ${ZEPPELIN_SERVER} ${HOST} ${PORT} &
 fi
 
 pid=$!

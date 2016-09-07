@@ -19,11 +19,16 @@ package org.apache.zeppelin.interpreter.remote;
 
 
 import java.io.IOException;
+import java.io.PrintWriter;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.InvocationTargetException;
 import java.net.URL;
 import java.nio.ByteBuffer;
 import java.util.*;
+import java.net.InetSocketAddress;
+import java.net.ServerSocket;
+import java.net.Socket;
+import java.net.InetAddress;
 
 import org.apache.thrift.TException;
 import org.apache.thrift.server.TThreadPoolServer;
@@ -66,7 +71,10 @@ public class RemoteInterpreterServer
 
   RemoteInterpreterService.Processor<RemoteInterpreterServer> processor;
   RemoteInterpreterServer handler;
+  private String host;
   private int port;
+  private String localHost;
+  private int localPort;
   private TThreadPoolServer server;
 
   RemoteInterpreterEventClient eventClient = new RemoteInterpreterEventClient();
@@ -75,18 +83,48 @@ public class RemoteInterpreterServer
   private final Map<String, RunningApplication> runningApplications =
       Collections.synchronizedMap(new HashMap<String, RunningApplication>());
 
-  public RemoteInterpreterServer(int port) throws TTransportException {
+  public RemoteInterpreterServer(String host, int port) throws TTransportException {
+    //  Store remote IP and port
     this.port = port;
+    this.host = host;
 
+    // Discover local IP and port
+    try {
+      ServerSocket socket = new ServerSocket(0);
+      this.localPort = socket.getLocalPort();
+      socket.close();
+      this.localHost = InetAddress.getLocalHost().getHostName();
+      logger.info("Interpreter thrift listener starting at {}:{}",
+        localHost,
+        Integer.toString(localPort));
+    } catch (IOException e1) {
+      throw new InterpreterException(e1);
+    }
+
+    // Start thrift server
     processor = new RemoteInterpreterService.Processor<RemoteInterpreterServer>(this);
-    TServerSocket serverTransport = new TServerSocket(port);
+    TServerSocket serverTransport = new TServerSocket(this.localPort);
     server = new TThreadPoolServer(
         new TThreadPoolServer.Args(serverTransport).processor(processor));
+
   }
 
   @Override
   public void run() {
-    logger.info("Starting remote interpreter server on port {}", port);
+    // Register with remote interpreter process
+    logger.info("Registering with interpreter process at {}:{}", this.host, this.port);
+    Socket socket = null;
+    try {
+      socket = new Socket(this.host, this.port);
+      PrintWriter out = new PrintWriter(socket.getOutputStream(), true);
+      out.println(this.localHost);
+      out.println(this.localPort);
+      socket.close();
+    } catch (IOException e2) {
+      throw new InterpreterException(e2);
+    }
+
+    logger.info("Starting remote interpreter server");
     server.serve();
   }
 
@@ -133,8 +171,9 @@ public class RemoteInterpreterServer
 
   public static void main(String[] args)
       throws TTransportException, InterruptedException {
-    int port = Integer.parseInt(args[0]);
-    RemoteInterpreterServer remoteInterpreterServer = new RemoteInterpreterServer(port);
+    String host = args[0];
+    int port = Integer.parseInt(args[1]);
+    RemoteInterpreterServer remoteInterpreterServer = new RemoteInterpreterServer(host, port);
     remoteInterpreterServer.start();
     remoteInterpreterServer.join();
     System.exit(0);

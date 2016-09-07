@@ -25,8 +25,14 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.io.InputStreamReader;
+import java.io.BufferedReader;
 import java.io.OutputStream;
-import java.util.Map;
+import java.util.*;
+import java.net.InetSocketAddress;
+import java.net.ServerSocket;
+import java.net.Socket;
+import java.net.InetAddress;
 
 /**
  * This class manages start / stop of remote interpreter process
@@ -41,12 +47,15 @@ public class RemoteInterpreterManagedProcess extends RemoteInterpreterProcess
   private ExecuteWatchdog watchdog;
   boolean running = false;
   private int port = -1;
+  private String host = "localhost";
   private final String interpreterDir;
   private final String localRepoDir;
 
   private Map<String, String> env;
+  private Properties property;
 
   public RemoteInterpreterManagedProcess(
+      Properties property,
       String intpRunner,
       String intpDir,
       String localRepoDir,
@@ -58,12 +67,14 @@ public class RemoteInterpreterManagedProcess extends RemoteInterpreterProcess
         connectTimeout);
     this.interpreterRunner = intpRunner;
     this.env = env;
+    this.property = property;
     this.interpreterDir = intpDir;
     this.localRepoDir = localRepoDir;
 
   }
 
-  RemoteInterpreterManagedProcess(String intpRunner,
+  RemoteInterpreterManagedProcess(Properties property,
+                                  String intpRunner,
                                   String intpDir,
                                   String localRepoDir,
                                   Map<String, String> env,
@@ -73,34 +84,52 @@ public class RemoteInterpreterManagedProcess extends RemoteInterpreterProcess
         connectTimeout);
     this.interpreterRunner = intpRunner;
     this.env = env;
+    this.property = property;
     this.interpreterDir = intpDir;
     this.localRepoDir = localRepoDir;
   }
 
   @Override
   public String getHost() {
-    return "localhost";
+    return this.host;
   }
 
   @Override
   public int getPort() {
-    return port;
+    return this.port;
   }
 
   @Override
   public void start() {
-    // start server process
+    // Create interpreter registration socket
+    ServerSocket serverSocket = null;
+    String localHost = "";
+    int localPort = -1;
     try {
-      port = RemoteInterpreterUtils.findRandomAvailablePortOnAllLocalInterfaces();
+      serverSocket = new ServerSocket(0);
+      localPort = serverSocket.getLocalPort();
+      localHost = InetAddress.getLocalHost().getHostName();
+      logger.info("Created interpreter registration listener at {}:{}",
+        localHost,
+        localPort);
     } catch (IOException e1) {
       throw new InterpreterException(e1);
     }
 
     CommandLine cmdLine = CommandLine.parse(interpreterRunner);
+    String master = property.getProperty("master");
+    logger.info("Spark Master: {}", master);
+    if (master != null &&
+        (master.equals("yarn-cluster") || master.equals("cluster"))) {
+      cmdLine.addArgument("-m", false);
+      cmdLine.addArgument(master, false);
+    }
     cmdLine.addArgument("-d", false);
     cmdLine.addArgument(interpreterDir, false);
+    cmdLine.addArgument("-h", false);
+    cmdLine.addArgument(localHost);
     cmdLine.addArgument("-p", false);
-    cmdLine.addArgument(Integer.toString(port), false);
+    cmdLine.addArgument(Integer.toString(localPort), false);
     cmdLine.addArgument("-l", false);
     cmdLine.addArgument(localRepoDir, false);
 
@@ -122,9 +151,25 @@ public class RemoteInterpreterManagedProcess extends RemoteInterpreterProcess
     }
 
 
+    // Capture callback from remote interpreter
+    // TODO(JohanMuedsam): How to handle restarted remote interpreters?
+    try {
+      logger.info("Waiting for interpreter connection...");
+      Socket socket = serverSocket.accept();
+      serverSocket.close();
+      BufferedReader input =
+        new BufferedReader(new InputStreamReader(socket.getInputStream()));
+      this.host = input.readLine();
+      this.port = Integer.parseInt(input.readLine());
+      socket.close();
+      logger.info("Remote interpreter available at {}:{}", host, port);
+    } catch (Exception e3) {
+      throw new InterpreterException(e3);
+    }
+
     long startTime = System.currentTimeMillis();
     while (System.currentTimeMillis() - startTime < getConnectTimeout()) {
-      if (RemoteInterpreterUtils.checkIfRemoteEndpointAccessible("localhost", port)) {
+      if (RemoteInterpreterUtils.checkIfRemoteEndpointAccessible(this.host, this.port)) {
         break;
       } else {
         try {

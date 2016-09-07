@@ -186,7 +186,7 @@ public class RemoteInterpreter extends Interpreter {
         } else {
           // create new remote process
           remoteProcess = new RemoteInterpreterManagedProcess(
-              interpreterRunner, interpreterPath, localRepoPath, env, connectTimeout,
+              property, interpreterRunner, interpreterPath, localRepoPath, env, connectTimeout,
               remoteInterpreterProcessListener, applicationEventListener);
         }
 

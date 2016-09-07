@@ -21,6 +21,13 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.mockito.Mockito.*;
 
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.net.InetAddress;
+import java.net.Socket;
+import java.net.ServerSocket;
+import java.net.UnknownHostException;
 import java.util.HashMap;
 import java.util.Properties;
 
@@ -42,6 +49,7 @@ public class RemoteInterpreterProcessTest {
   public void testStartStop() {
     InterpreterGroup intpGroup = new InterpreterGroup();
     RemoteInterpreterManagedProcess rip = new RemoteInterpreterManagedProcess(
+        new java.util.Properties(),
         INTERPRETER_SCRIPT, "nonexists", "fakeRepo", new HashMap<String, String>(),
         10 * 1000, null, null);
     assertFalse(rip.isRunning());
@@ -59,6 +67,7 @@ public class RemoteInterpreterProcessTest {
   public void testClientFactory() throws Exception {
     InterpreterGroup intpGroup = new InterpreterGroup();
     RemoteInterpreterManagedProcess rip = new RemoteInterpreterManagedProcess(
+        new java.util.Properties(),
         INTERPRETER_SCRIPT, "nonexists", "fakeRepo", new HashMap<String, String>(),
         mock(RemoteInterpreterEventPoller.class), 10 * 1000);
     rip.reference(intpGroup);
@@ -77,9 +86,22 @@ public class RemoteInterpreterProcessTest {
   }
 
   @Test
-  public void testStartStopRemoteInterpreter() throws TException, InterruptedException {
-    RemoteInterpreterServer server = new RemoteInterpreterServer(3678);
+      public void testStartStopRemoteInterpreter() throws UnknownHostException, TException, InterruptedException, IOException {
+    ServerSocket serverSocket = new ServerSocket(0);
+    int  localPort = serverSocket.getLocalPort();
+    String  localHost = InetAddress.getLocalHost().getHostName();
+
+    RemoteInterpreterServer server = new RemoteInterpreterServer(localHost, localPort);
     server.start();
+
+    Socket socket = serverSocket.accept();
+    serverSocket.close();
+    BufferedReader input =
+      new BufferedReader(new InputStreamReader(socket.getInputStream()));
+    String host = input.readLine();
+    int port = Integer.parseInt(input.readLine());
+    socket.close();
+
     boolean running = false;
     long startTime = System.currentTimeMillis();
     while (System.currentTimeMillis() - startTime < 10 * 1000) {
@@ -91,13 +113,14 @@ public class RemoteInterpreterProcessTest {
       }
     }
     Properties properties = new Properties();
-    properties.setProperty(Constants.ZEPPELIN_INTERPRETER_PORT, "3678");
-    properties.setProperty(Constants.ZEPPELIN_INTERPRETER_HOST, "localhost");
+    properties.setProperty(Constants.ZEPPELIN_INTERPRETER_PORT, new Integer(port).toString());
+    properties.setProperty(Constants.ZEPPELIN_INTERPRETER_HOST, host);
     InterpreterGroup intpGroup = mock(InterpreterGroup.class);
     when(intpGroup.getProperty()).thenReturn(properties);
     when(intpGroup.containsKey(Constants.EXISTING_PROCESS)).thenReturn(true);
 
     RemoteInterpreterProcess rip = new RemoteInterpreterManagedProcess(
+        new java.util.Properties(),
         INTERPRETER_SCRIPT,
         "nonexists",
         "fakeRepo",

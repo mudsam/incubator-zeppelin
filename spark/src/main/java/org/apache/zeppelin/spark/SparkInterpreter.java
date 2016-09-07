@@ -33,7 +33,6 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import com.google.common.base.Joiner;
 
-import org.apache.commons.lang3.StringUtils;
 import org.apache.hadoop.security.UserGroupInformation;
 import org.apache.spark.SparkConf;
 import org.apache.spark.SparkContext;
@@ -301,9 +300,7 @@ public class SparkInterpreter extends Interpreter {
     String execUri = System.getenv("SPARK_EXECUTOR_URI");
     conf.setAppName(getProperty("spark.app.name"));
 
-    if (outputDir != null) {
-      conf.set("spark.repl.class.outputDir", outputDir.getAbsolutePath());
-    }
+    conf.set("spark.repl.class.outputDir", outputDir.getAbsolutePath());
 
     if (execUri != null) {
       conf.set("spark.executor.uri", execUri);
@@ -314,7 +311,10 @@ public class SparkInterpreter extends Interpreter {
     }
 
     conf.set("spark.scheduler.mode", "FAIR");
-    conf.setMaster(getProperty("master"));
+    if (!(getProperty("master").equals("yarn-cluster") ||
+        getProperty("master").equals("cluster"))) {
+      conf.setMaster(getProperty("master"));
+    }
 
     Properties intpProperty = getProperty();
 
@@ -596,11 +596,7 @@ public class SparkInterpreter extends Interpreter {
       argList.add("-Yrepl-class-based");
       argList.add("-Yrepl-outdir");
       argList.add(outputDir.getAbsolutePath());
-      if (conf.contains("spark.jars")) {
-        String jars = StringUtils.join(conf.get("spark.jars").split(","), File.separator);
-        argList.add("-classpath");
-        argList.add(jars);
-      }
+
 
       scala.collection.immutable.List<String> list =
           JavaConversions.asScalaBuffer(argList).toList();

@@ -19,7 +19,13 @@ package org.apache.zeppelin.interpreter.remote;
 
 import static org.junit.Assert.assertEquals;
 
+import java.io.BufferedReader;
 import java.io.IOException;
+import java.io.InputStreamReader;
+import java.net.InetAddress;
+import java.net.Socket;
+import java.net.ServerSocket;
+import java.net.UnknownHostException;
 
 import org.apache.thrift.TException;
 import org.apache.zeppelin.interpreter.remote.RemoteInterpreterServer;
@@ -38,14 +44,26 @@ public class RemoteInterpreterServerTest {
   }
 
   @Test
-  public void testStartStop() throws InterruptedException, IOException, TException {
+  public void testStartStop() throws UnknownHostException, InterruptedException, IOException, TException {
+    ServerSocket serverSocket = new ServerSocket(0);
+    int  localPort = serverSocket.getLocalPort();
+    String  localHost = InetAddress.getLocalHost().getHostName();
+
     RemoteInterpreterServer server = new RemoteInterpreterServer(
-        RemoteInterpreterUtils.findRandomAvailablePortOnAllLocalInterfaces());
+        localHost, localPort);
     assertEquals(false, server.isRunning());
 
     server.start();
     long startTime = System.currentTimeMillis();
     boolean running = false;
+
+    Socket socket = serverSocket.accept();
+    serverSocket.close();
+    BufferedReader input =
+      new BufferedReader(new InputStreamReader(socket.getInputStream()));
+    String host = input.readLine();
+    int port = Integer.parseInt(input.readLine());
+    socket.close();
 
     while (System.currentTimeMillis() - startTime < 10 * 1000) {
       if (server.isRunning()) {
@@ -57,7 +75,7 @@ public class RemoteInterpreterServerTest {
     }
 
     assertEquals(true, running);
-    assertEquals(true, RemoteInterpreterUtils.checkIfRemoteEndpointAccessible("localhost", server.getPort()));
+    assertEquals(true, RemoteInterpreterUtils.checkIfRemoteEndpointAccessible(host, port));
 
     server.shutdown();
 

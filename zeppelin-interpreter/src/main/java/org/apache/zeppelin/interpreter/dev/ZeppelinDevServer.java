@@ -40,7 +40,7 @@ public class ZeppelinDevServer extends
   DevInterpreter interpreter = null;
   InterpreterOutput out;
   public ZeppelinDevServer(int port) throws TException {
-    super(port);
+    super("localhost", port);
   }
 
   @Override
